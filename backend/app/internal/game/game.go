@@ -1,12 +1,46 @@
 package game
 
-type game struct {
-	players map[string]Player
+import (
+	"errors"
+	"math/rand"
+	"time"
+
+	"github.com/google/uuid"
+
+	"game/api/internal/game/entity"
+)
+
+type Config struct {
+	MaxNumberDraw int //maximum limit of the number drawn.
 }
 
-func NewGame() *game {
+type game struct {
+	cfg     Config
+	players map[string]*entity.Player
+}
+
+func NewGame(cfg Config) *game {
 	return &game{
-		players: make(map[string]Player, 0),
+		cfg:     cfg,
+		players: make(map[string]*entity.Player),
 	}
 }
 
+func (g *game) DrawANumber() int {
+	source := rand.NewSource(time.Now().UnixNano())
+	rng := rand.New(source)
+	return rng.Intn(g.cfg.MaxNumberDraw) + 1
+}
+
+func (g *game) AddPlayer(p *entity.Player) {
+	g.players[p.GetID().String()] = p
+}
+
+func (g *game) GetPlayer(playerUUID uuid.UUID) (*entity.Player, error) {
+	uuid := playerUUID.String()
+	if p, ok := g.players[uuid]; ok {
+		return p, nil
+	}
+
+	return nil, errors.New("player not found")
+}

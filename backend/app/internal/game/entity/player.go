@@ -1,8 +1,6 @@
-package game
+package entity
 
 import (
-	"errors"
-
 	"github.com/google/uuid"
 )
 
@@ -14,8 +12,14 @@ type Player struct {
 
 func NewPlayer() *Player {
 	return &Player{
-		id: uuid.New(),
+		id:      uuid.New(),
+		balance: 1000,
+		inPlay:  false,
 	}
+}
+
+func (p *Player) GetID() uuid.UUID {
+	return p.id
 }
 
 func (p *Player) CanBet(amount float64) bool {
@@ -34,11 +38,10 @@ func (p *Player) Credit(amount float64) {
 	p.balance += amount
 }
 
-func (p *Player) StartGame(amount float64) error {
-	if !p.CanBet(amount) {
-		return errors.New("the player has no balance")
-	}
-	p.Debit(amount)
+func (p *Player) PlayOn() {
 	p.inPlay = true
-	return nil
+}
+
+func (p *Player) PlayOff() {
+	p.inPlay = true
 }
