@@ -11,4 +11,5 @@ require (
 	github.com/gorilla/websocket v1.5.3 // indirect
 	github.com/lib/pq v1.10.9 // indirect
 	github.com/redis/go-redis/v9 v9.7.3 // indirect
+	golang.org/x/crypto v0.37.0 // indirect
 )

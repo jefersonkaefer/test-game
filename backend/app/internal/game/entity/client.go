@@ -2,6 +2,9 @@ package entity
 
 import (
 	"github.com/google/uuid"
+	"golang.org/x/crypto/bcrypt"
+
+	"game/api/internal/infra/database"
 )
 
 type Wallet struct {
@@ -10,50 +13,95 @@ type Wallet struct {
 }
 
 type Client struct {
-	guid   uuid.UUID
-	inPlay bool
-	wallet Wallet
+	id       uuid.UUID
+	username string
+	password string
+	inPlay   bool
+	wallet   Wallet
 }
 
-func NewClient() Client {
+func NewClient(username, password string) (Client, error) {
+	hashedPassword, err := HashPassword(password)
+	if err != nil {
+		return Client{}, err
+	}
+
 	return Client{
-		guid:   uuid.New(),
-		inPlay: false,
+		id:       uuid.New(),
+		username: username,
+		password: hashedPassword,
+		inPlay:   false,
 		wallet: Wallet{
 			guid:    uuid.New(),
 			balance: 0,
 		},
+	}, nil
+}
+
+func (c *Client) GetID() uuid.UUID {
+	return c.id
+}
+
+func (c *Client) GetUsername() string {
+	return c.username
+}
+
+func (c *Client) GetPassword() string {
+	return c.password
+}
+
+func (c *Client) GetBalance() float64 {
+	return c.wallet.balance
+}
+
+func (c *Client) CanBet(amount float64) bool {
+	return c.wallet.balance >= amount
+}
+
+func (c *Client) InPlay() bool {
+	return c.inPlay
+}
+
+func (c *Client) Debit(amount float64) {
+	c.wallet.balance -= amount
+}
+
+func (c *Client) Credit(amount float64) {
+	c.wallet.balance += amount
+}
+
+func (c *Client) PlayOn() {
+	c.inPlay = true
+}
+
+func (c *Client) PlayOff() {
+	c.inPlay = true
+}
+
+func HashPassword(password string) (string, error) {
+	bytes, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	return string(bytes), err
+}
+
+func CheckPasswordHash(password, hash string) bool {
+	err := bcrypt.CompareHashAndPassword([]byte(hash), []byte(password))
+	return err == nil
+}
+
+func LoadClient(cData database.ClientData) (c Client, err error) {
+	c.id, err = uuid.Parse(cData.GUID)
+	if err != nil {
+		return
 	}
-}
-
-func (p *Client) GetID() uuid.UUID {
-	return p.guid
-}
-
-func (p *Client) GetBalance() float64 {
-	return p.wallet.balance
-}
-
-func (p *Client) CanBet(amount float64) bool {
-	return p.wallet.balance >= amount
-}
-
-func (p *Client) InPlay() bool {
-	return p.inPlay
-}
-
-func (p *Client) Debit(amount float64) {
-	p.wallet.balance -= amount
-}
-
-func (p *Client) Credit(amount float64) {
-	p.wallet.balance += amount
-}
-
-func (p *Client) PlayOn() {
-	p.inPlay = true
-}
-
-func (p *Client) PlayOff() {
-	p.inPlay = true
+	c.username = cData.Username
+	c.password = cData.Password
+	wGuid, err := uuid.Parse(cData.Wallet.GUID)
+	if err != nil {
+		return
+	}
+	c.wallet = Wallet{
+		guid:    wGuid,
+		balance: cData.Wallet.Balance,
+	}
+	return
 }
