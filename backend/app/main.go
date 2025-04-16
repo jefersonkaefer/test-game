@@ -9,8 +9,8 @@ import (
 	"github.com/gorilla/websocket"
 	cache "github.com/redis/go-redis/v9"
 
-	"game/api/internal/game"
-	"game/api/internal/game/entity"
+	"game/api/internal/controller"
+	"game/api/internal/infra/database"
 	"game/api/internal/network"
 )
 
@@ -20,16 +20,16 @@ func main() {
 			log.Printf("panic recovery: %v", err)
 		}
 	}()
-	/*
-		conn, err := dbConn()
-		if err != nil {
-			log.Default().Fatal("ERROR occurs: %v", err)
-		}
 
-		pg := database.NewPostgres(conn)
-		cacheClient := cacheConn()
-		redis := database.NewRedis(cacheClient)
-	*/
+	conn, err := dbConn()
+	if err != nil {
+		log.Default().Fatal("ERROR occurs: %v", err)
+	}
+
+	pg := database.NewPostgres(conn)
+	cacheClient := cacheConn()
+	redis := database.NewRedis(cacheClient)
+
 	wsCfg := network.WSConfig{
 		Upgrader: websocket.Upgrader{
 			CheckOrigin: func(r *http.Request) bool {
@@ -37,26 +37,16 @@ func main() {
 			},
 		},
 	}
-	ws := network.NewWebSocket(wsCfg)
-	http.HandleFunc("/ws", ws.HandleConnections)
+	app := controller.NewApp(pg, redis)
+	ws := network.NewWebSocket(wsCfg, app)
+	http.HandleFunc("/ws", controller.RequireJWT(ws.HandleConnections))
 
 	log.Println("Servidor WebSocket iniciado na porta :8080")
-	err := http.ListenAndServe(":4300", nil)
+	err = http.ListenAndServe(":4300", nil)
 	if err != nil {
 		log.Fatalf("Erro ao iniciar o servidor: %v", err)
 	}
-	p := entity.NewPlayer()
-	cfg := game.Config{
-		MaxNumberDraw: 10,
-	}
-	g := game.NewGame(cfg)
-	m := game.NewMatch(g)
-	mr, err := m.Play(p, 10, game.Even)
 
-	if err != nil {
-		log.Println("ERRO:", err.Error())
-	}
-	fmt.Printf("%v", mr)
 }
 
 func dbConn() (*sql.DB, error) {

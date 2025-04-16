@@ -16,13 +16,13 @@ type Config struct {
 
 type game struct {
 	cfg     Config
-	players map[string]*entity.Player
+	players map[string]*entity.Client
 }
 
 func NewGame(cfg Config) *game {
 	return &game{
 		cfg:     cfg,
-		players: make(map[string]*entity.Player),
+		players: make(map[string]*entity.Client),
 	}
 }
 
@@ -32,11 +32,11 @@ func (g *game) DrawANumber() int {
 	return rng.Intn(g.cfg.MaxNumberDraw) + 1
 }
 
-func (g *game) AddPlayer(p *entity.Player) {
+func (g *game) AddPlayer(p *entity.Client) {
 	g.players[p.GetID().String()] = p
 }
 
-func (g *game) GetPlayer(playerUUID uuid.UUID) (*entity.Player, error) {
+func (g *game) GetPlayer(playerUUID uuid.UUID) (*entity.Client, error) {
 	uuid := playerUUID.String()
 	if p, ok := g.players[uuid]; ok {
 		return p, nil

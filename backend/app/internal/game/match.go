@@ -31,7 +31,7 @@ func NewMatch(game MatchGame) *match {
 	}
 }
 
-func (m *match) Play(p *entity.Player, amount float64, bet BetType) (mr MatchResult, err error) {
+func (m *match) Play(p entity.Client, amount float64, bet BetType) (mr MatchResult, err error) {
 	defer p.PlayOff()
 	if err != nil {
 		return
