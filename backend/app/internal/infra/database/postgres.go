@@ -63,11 +63,11 @@ func (pg *Postgres) FindClientByUsername(username string) (client ClientData, er
 		&client.Wallet.CreatedAt, &client.Wallet.UpdatedAt,
 	)
 	if err != nil {
-		log.Default().Println("%v", err)
 		if errors.Is(err, sql.ErrNoRows) {
 			err = errs.ErrNotFound
 			return
 		}
+		log.Default().Println("ERROR:", err)
 		return
 	}
 	return
