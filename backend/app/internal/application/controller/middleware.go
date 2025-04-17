@@ -2,65 +2,76 @@ package controller
 
 import (
 	"context"
-	"errors"
-	"log"
+	"fmt"
 	"net/http"
 	"os"
 	"strings"
 
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/sirupsen/logrus"
+
+	"game/api/internal/infra/logger"
 )
 
 type contextKey string
 
-const ContextClientKey contextKey = "client"
+const ContextClientKey contextKey = "client_id"
 
 var jwtSecret = []byte(os.Getenv("JWT_SECRET_KEY"))
 
 func RequireJWT(next http.HandlerFunc) http.HandlerFunc {
-	log.Println("1")
 	return func(w http.ResponseWriter, r *http.Request) {
-		log.Println("2")
+		logger.Debug("Validating JWT token")
 
-		tokenStr, err := extractTokenFromRequest(r)
-		log.Println("3")
-
+		// Tentar extrair o token do cabeçalho ou dos parâmetros da URL
+		tokenStr, err := extractToken(r)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusUnauthorized)
-			log.Println("3erro;", err)
+			logger.Errorf("Failed to extract token: %v", err)
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return
 		}
-		log.Println("4")
 
-		claims := jwt.MapClaims{}
+		claims := &jwt.RegisteredClaims{}
 		token, err := jwt.ParseWithClaims(tokenStr, claims, func(token *jwt.Token) (interface{}, error) {
-			log.Println("4erro;", err)
 			return jwtSecret, nil
 		})
-		log.Println("5")
-		if err != nil || !token.Valid {
-			log.Println("5erro;", err)
-			http.Error(w, "Token inválido", http.StatusUnauthorized)
+
+		if err != nil {
+			logger.Errorf("Failed to parse token: %v", err)
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return
 		}
 
-		clientID := claims["client_id"].(string)
-		ctx := context.WithValue(r.Context(), ContextClientKey, clientID)
-		next(w, r.WithContext(ctx))
+		if !token.Valid {
+			logger.Warn("Invalid token")
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+
+		logger.WithFields(logrus.Fields{
+			"subject": claims.Subject,
+		}).Debug("Token validated successfully")
+
+		ctx := context.WithValue(r.Context(), ContextClientKey, claims.Subject)
+		next.ServeHTTP(w, r.WithContext(ctx))
 	}
 }
 
-func extractTokenFromRequest(r *http.Request) (string, error) {
-	// Tenta pegar do Header
+func extractToken(r *http.Request) (string, error) {
+	// Tentar extrair o token do cabeçalho Authorization
 	authHeader := r.Header.Get("Authorization")
-	if strings.HasPrefix(authHeader, "Bearer ") {
-		return strings.TrimPrefix(authHeader, "Bearer "), nil
+	if authHeader != "" {
+		parts := strings.Split(authHeader, " ")
+		if len(parts) == 2 && parts[0] == "Bearer" {
+			return parts[1], nil
+		}
 	}
 
-	// Se não vier no header, tenta na query
-	if token := r.URL.Query().Get("token"); token != "" {
-		return token, nil
+	// Tentar extrair o token dos parâmetros da URL
+	queryToken := r.URL.Query().Get("token")
+	if queryToken != "" {
+		return queryToken, nil
 	}
 
-	return "", errors.New("token JWT ausente")
+	return "", fmt.Errorf("token not found in header or URL parameters")
 }

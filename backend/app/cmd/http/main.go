@@ -7,38 +7,40 @@ import (
 	"game/api/internal/application"
 	"game/api/internal/application/controller"
 	"game/api/internal/application/repository"
-	"game/api/internal/infra/database"
+	"game/api/internal/infra/logger"
 	"game/api/internal/infra/network"
 )
 
 func main() {
+	logger.Info("Starting HTTP server")
+
 	defer func() {
-		if err := recover(); err != nil {
-			log.Printf("panic recovery: %v", err)
+		if r := recover(); r != nil {
+			logger.Errorf("Panic recovered: %v", r)
 		}
 	}()
 
-	conn, err := application.DbConn()
+	db, err := application.DbConn()
 	if err != nil {
-		log.Fatalf("ERROR occurs: %v", err)
+		log.Fatalf("Failed to connect to database: %v", err)
 	}
+	defer db.Close()
 
-	pg := database.NewPostgres(conn)
-	cacheClient := application.CacheConn()
-	redis := database.NewRedis(cacheClient)
+	cache := application.CacheConn()
+	defer cache.Close()
 
-	clientsRepo := repository.NewClient(pg, redis)
-	clientCtrl := controller.NewClient(clientsRepo)
-	app := &application.App{
-		ClientCtrl: clientCtrl,
-	}
-	api := network.NewWebServer(app)
+	clientRepo := repository.NewClient(db, cache)
+	clientCtrl := controller.NewClient(clientRepo)
 
-	http.HandleFunc("/client", api.NewClient)
-	http.HandleFunc("/login", api.Login)
+	app := application.NewApp(clientCtrl)
 
-	log.Println("HTTP server started on port :4300")
+	server := network.NewWebServer(app)
+
+	http.HandleFunc("/client", server.NewClient)
+	http.HandleFunc("/login", server.Login)
+
+	logger.Info("HTTP server listening on :8000")
 	if err := http.ListenAndServe(":8000", nil); err != nil {
-		log.Fatalf("An error occurred while starting HTTP: %v", err)
+		log.Fatalf("Failed to start HTTP server: %v", err)
 	}
 }

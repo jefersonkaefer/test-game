@@ -1,16 +1,16 @@
 package network
 
 import (
-	"encoding/json"
 	"fmt"
-	"log"
 	"net/http"
 	"sync"
 
 	"github.com/gorilla/websocket"
+	"github.com/sirupsen/logrus"
 
 	"game/api/internal/application"
 	"game/api/internal/application/controller"
+	"game/api/internal/infra/logger"
 )
 
 type WebSocketServer struct {
@@ -21,54 +21,80 @@ type WebSocketServer struct {
 }
 
 type WSConfig struct {
-	Upgrader websocket.Upgrader
+	ReadBufferSize  int
+	WriteBufferSize int
 }
 
 func NewWebSocket(cfg WSConfig, app *application.App) *WebSocketServer {
+	logger.Info("Initializing WebSocket server")
 	return &WebSocketServer{
-		upgrader: cfg.Upgrader,
-		clients:  make(map[*websocket.Conn]bool),
-		app:      app,
+		upgrader: websocket.Upgrader{
+			ReadBufferSize:  cfg.ReadBufferSize,
+			WriteBufferSize: cfg.WriteBufferSize,
+		},
+		clients: make(map[*websocket.Conn]bool),
+		app:     app,
 	}
 }
 
 func (ws *WebSocketServer) HandleConnections(w http.ResponseWriter, r *http.Request) {
+	logger.Info("New WebSocket connection attempt")
+
 	conn, err := ws.upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		log.Printf("Erro ao atualizar para WebSocket: %v", err)
+		logger.Errorf("Failed to upgrade connection: %v", err)
 		return
 	}
 	defer conn.Close()
-	clientID := r.Context().Value(controller.ContextClientKey).(string)
+
+	logger.Info("WebSocket connection established")
+
+	// Verificação segura do clientID
+	clientIDValue := r.Context().Value(controller.ContextClientKey)
+	if clientIDValue == nil {
+		logger.Error("Client ID not found in context")
+		conn.WriteMessage(websocket.TextMessage, []byte("Error: Unauthorized"))
+		return
+	}
+
+	clientID, ok := clientIDValue.(string)
+	if !ok {
+		logger.Error("Invalid client ID type in context")
+		conn.WriteMessage(websocket.TextMessage, []byte("Error: Invalid client ID"))
+		return
+	}
+
 	ws.mu.Lock()
 	ws.clients[conn] = true
-	conn.WriteMessage(websocket.TextMessage, fmt.Appendf(nil, "Welcome, %s!", clientID))
-	for user, _ := range ws.clients {
+	conn.WriteMessage(websocket.TextMessage, []byte(fmt.Sprintf("Welcome, %s!", clientID)))
+	for user := range ws.clients {
 		if err := user.WriteMessage(websocket.TextMessage, []byte(fmt.Sprintf("%s has joined the chat.", clientID))); err != nil {
-			log.Println("Error sending welcome message:", err)
-			return
+			logger.Errorf("Error sending welcome message: %v", err)
+			continue
 		}
 	}
 	ws.mu.Unlock()
 
 	for {
-		_, msg, err := conn.ReadMessage()
-		if err != nil {
-			log.Printf("Erro ao ler mensagem: %v", err)
-		}
 		var req application.Request
-		if err := json.Unmarshal(msg, &req); err != nil {
-			log.Printf("Erro ao decodificar aposta: %v", err)
-			continue
+		err := conn.ReadJSON(&req)
+		if err != nil {
+			logger.Errorf("Error reading message: %v", err)
+			break
 		}
-		ws.app.WebSocket(req)
 
-		log.Printf("Aposta recebida: %+v", req)
+		logger.WithFields(logrus.Fields{
+			"action": req.Action,
+		}).Debug("Received WebSocket message")
 
-		// Aqui você pode adicionar lógica para:
-		// - Validar a aposta
-		// - Atualizar o saldo do jogador no PostgreSQL
-		// - Atualizar o cache no Redis
-		// - Enviar uma resposta ao cliente
+		res := ws.app.WebSocket(req)
+
+		err = conn.WriteJSON(res)
+		if err != nil {
+			logger.Errorf("Error writing message: %v", err)
+			break
+		}
 	}
+
+	logger.Info("WebSocket connection closed")
 }

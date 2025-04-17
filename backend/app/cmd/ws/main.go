@@ -4,50 +4,43 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/gorilla/websocket"
-
 	"game/api/internal/application"
 	"game/api/internal/application/controller"
 	"game/api/internal/application/repository"
-	"game/api/internal/infra/database"
+	"game/api/internal/infra/logger"
 	"game/api/internal/infra/network"
 )
 
 func main() {
+	logger.Info("Starting WebSocket server")
+
 	defer func() {
-		if err := recover(); err != nil {
-			log.Printf("panic recovery: %v", err)
+		if r := recover(); r != nil {
+			logger.Errorf("Panic recovered: %v", r)
 		}
 	}()
 
-	conn, err := application.DbConn()
+	db, err := application.DbConn()
 	if err != nil {
-		log.Fatalf("ERROR occurs: %v", err)
+		log.Fatalf("Failed to connect to database: %v", err)
 	}
+	defer db.Close()
 
-	pg := database.NewPostgres(conn)
-	cacheClient := application.CacheConn()
-	redis := database.NewRedis(cacheClient)
+	cache := application.CacheConn()
+	defer cache.Close()
+	clientRepo := repository.NewClient(db, cache)
+	clientCtrl := controller.NewClient(clientRepo)
 
-	wsCfg := network.WSConfig{
-		Upgrader: websocket.Upgrader{
-			CheckOrigin: func(r *http.Request) bool {
-				return true
-			},
-		},
-	}
-	clientsRepo := repository.NewClient(pg, redis)
-	clientCtrl := controller.NewClient(clientsRepo)
-
-	app := &application.App{
-		ClientCtrl: clientCtrl,
-	}
-	ws := network.NewWebSocket(wsCfg, app)
+	app := application.NewApp(clientCtrl)
+	ws := network.NewWebSocket(network.WSConfig{
+		ReadBufferSize:  1024,
+		WriteBufferSize: 1024,
+	}, app)
 
 	http.HandleFunc("/ws", controller.RequireJWT(ws.HandleConnections))
 
-	log.Println("WebSocket server started on port :4300")
+	logger.Info("WebSocket server listening on :4300")
 	if err := http.ListenAndServe(":4300", nil); err != nil {
-		log.Fatalf("Erro ao iniciar o servidor WebSocket: %v", err)
+		log.Fatalf("Failed to start WebSocket server: %v", err)
 	}
 }

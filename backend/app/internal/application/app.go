@@ -1,6 +1,7 @@
 package application
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -9,51 +10,73 @@ import (
 
 	"github.com/google/uuid"
 	cache "github.com/redis/go-redis/v9"
+	"github.com/sirupsen/logrus"
 
 	"game/api/internal/application/controller"
+	"game/api/internal/infra/database"
+	"game/api/internal/infra/logger"
 )
 
 type App struct {
 	ClientCtrl *controller.Client
 }
 
-func (a *App) NewGame() (uuid.UUID, error) {
-	/*
-			cfg := game.Config{
-				MaxNumberDraw: 10,
-			}
-			g := game.NewGame(cfg)
-			m := game.NewMatch(g)
-			p := entity.NewClient()
-
-			mr, err := m.Play(p, 10, game.Even)
-
-			if err != nil {
-				log.Println("ERRO:", err.Error())
-			}
-		fmt.Printf("%v", mr)
-	*/
-	return uuid.New(), nil
+func NewApp(ClientCtrl *controller.Client) *App {
+	logger.Info("Initializing application")
+	return &App{
+		ClientCtrl: ClientCtrl,
+	}
 }
 
-func DbConn() (*sql.DB, error) {
+func (a *App) NewGame() (uuid.UUID, error) {
+	logger.Debug("Creating new game")
+
+	gameID := uuid.New()
+
+	logger.WithFields(logrus.Fields{
+		"gameID": gameID,
+	}).Info("New game created successfully")
+
+	return gameID, nil
+}
+
+func DbConn() (*database.Postgres, error) {
+	logger.Debug("Establishing database connection")
 	host := os.Getenv("POSTGRES_HOST")
 	port := os.Getenv("POSTGRES_PORT")
 	user := os.Getenv("POSTGRES_USERNAME")
 	pw := os.Getenv("POSTGRES_PASSWORD")
 	db := os.Getenv("POSTGRES_DB")
 	connStr := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=disable", host, port, user, pw, db)
-	return sql.Open("postgres", connStr)
+	logger.Info("Database connection established successfully")
+	conn, err := sql.Open("postgres", connStr)
+	if err != nil {
+		logger.Errorf("Failed to connect to database: %v", err)
+		return nil, err
+	}
+	if err := conn.Ping(); err != nil {
+		logger.Errorf("Failed to ping database: %v", err)
+		return nil, err
+	}
+	logger.Info("Database connection pinged successfully")
+	return database.NewPostgres(conn), nil
 }
 
-func CacheConn() *cache.Client {
+func CacheConn() *database.Redis {
+	logger.Debug("Establishing cache connection")
 	addr := os.Getenv("REDIS_ADDR")
 	password := "t3st"
-	return cache.NewClient(&cache.Options{
+	logger.Info("Cache connection established successfully")
+	client := cache.NewClient(&cache.Options{
 		Addr:     addr,
 		Password: password,
 		DB:       0,
 	})
+	if err := client.Ping(context.Background()); err != nil {
+		logger.Errorf("Failed to ping cache: %v", err)
+		return nil
+	}
+	return database.NewRedis(client)
 }
 
 const (
@@ -72,6 +95,10 @@ type Response struct {
 }
 
 func (a *App) WebSocket(req Request) (res Response) {
+	logger.WithFields(logrus.Fields{
+		"action": req.Action,
+	}).Debug("Processing WebSocket request")
+
 	switch req.Action {
 	case ActionNewPlayer:
 		var r controller.NewClientRequest
@@ -95,5 +122,10 @@ func (a *App) WebSocket(req Request) (res Response) {
 	default:
 		res.Error = fmt.Sprintf("Unknown action: %s", req.Action)
 	}
+
+	logger.WithFields(logrus.Fields{
+		"action": req.Action,
+	}).Debug("WebSocket request processed successfully")
+
 	return res
 }
