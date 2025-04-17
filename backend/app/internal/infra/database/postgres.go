@@ -67,7 +67,7 @@ func (pg *Postgres) FindClientByUsername(username string) (client ClientData, er
 			err = errs.ErrNotFound
 			return
 		}
-		log.Default().Println("ERROR:", err)
+		log.Println("ERROR:", err)
 		return
 	}
 	return

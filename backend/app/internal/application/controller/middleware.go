@@ -18,28 +18,28 @@ const ContextClientKey contextKey = "client"
 var jwtSecret = []byte(os.Getenv("JWT_SECRET_KEY"))
 
 func RequireJWT(next http.HandlerFunc) http.HandlerFunc {
-	log.Default().Println("1")
+	log.Println("1")
 	return func(w http.ResponseWriter, r *http.Request) {
-		log.Default().Println("2")
+		log.Println("2")
 
 		tokenStr, err := extractTokenFromRequest(r)
-		log.Default().Println("3")
+		log.Println("3")
 
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusUnauthorized)
-			log.Default().Println("3erro;", err)
+			log.Println("3erro;", err)
 			return
 		}
-		log.Default().Println("4")
+		log.Println("4")
 
 		claims := jwt.MapClaims{}
 		token, err := jwt.ParseWithClaims(tokenStr, claims, func(token *jwt.Token) (interface{}, error) {
-			log.Default().Println("4erro;", err)
+			log.Println("4erro;", err)
 			return jwtSecret, nil
 		})
-		log.Default().Println("5")
+		log.Println("5")
 		if err != nil || !token.Valid {
-			log.Default().Println("5erro;", err)
+			log.Println("5erro;", err)
 			http.Error(w, "Token inválido", http.StatusUnauthorized)
 			return
 		}

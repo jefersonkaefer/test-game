@@ -7,7 +7,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"game/api/internal/game/entity"
+	"game/api/internal/domain/entity"
 )
 
 type Config struct {

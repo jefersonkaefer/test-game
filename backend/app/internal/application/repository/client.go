@@ -3,7 +3,7 @@ package repository
 import (
 	"log"
 
-	"game/api/internal/game/entity"
+	"game/api/internal/domain/entity"
 	"game/api/internal/infra/database"
 )
 
@@ -30,7 +30,7 @@ func (c *Client) Add(client entity.Client) (err error) {
 	}
 	err = c.db.InsertClient(cData)
 	if err != nil {
-		log.Default().Println("ERROR:", err)
+		log.Println("ERROR:", err)
 	}
 	return
 }

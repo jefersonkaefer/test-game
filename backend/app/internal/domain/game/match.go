@@ -3,7 +3,7 @@ package game
 import (
 	"errors"
 
-	"game/api/internal/game/entity"
+	"game/api/internal/domain/entity"
 )
 
 type BetType string

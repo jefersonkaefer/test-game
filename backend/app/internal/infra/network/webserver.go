@@ -5,15 +5,16 @@ import (
 	"net/http"
 	"time"
 
-	"game/api/internal/controller"
+	"game/api/internal/application"
+	"game/api/internal/application/controller"
 	"game/api/internal/errs"
 )
 
 type webServer struct {
-	app *controller.App
+	app *application.App
 }
 
-func NewWebServer(app *controller.App) *webServer {
+func NewWebServer(app *application.App) *webServer {
 	return &webServer{
 		app: app,
 	}
@@ -69,8 +70,7 @@ func (ws *webServer) NewClient(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
 	}
-
-	res, err := ws.app.NewClient(req)
+	res, err := ws.app.ClientCtrl.NewClient(req)
 	if err != nil {
 		if err == errs.ErrUsernameExists {
 			JSONError(w, http.StatusConflict,
@@ -98,7 +98,7 @@ func (ws *webServer) Login(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
 	}
-	res, err := ws.app.Login(req)
+	res, err := ws.app.ClientCtrl.Login(req)
 	if err != nil {
 		if err == errs.ErrNotFound {
 			JSONError(w, http.StatusNotFound,

@@ -9,21 +9,22 @@ import (
 
 	"github.com/gorilla/websocket"
 
-	"game/api/internal/controller"
+	"game/api/internal/application"
+	"game/api/internal/application/controller"
 )
 
 type WebSocketServer struct {
 	upgrader websocket.Upgrader
 	mu       sync.Mutex
 	clients  map[*websocket.Conn]bool
-	app      *controller.App
+	app      *application.App
 }
 
 type WSConfig struct {
 	Upgrader websocket.Upgrader
 }
 
-func NewWebSocket(cfg WSConfig, app *controller.App) *WebSocketServer {
+func NewWebSocket(cfg WSConfig, app *application.App) *WebSocketServer {
 	return &WebSocketServer{
 		upgrader: cfg.Upgrader,
 		clients:  make(map[*websocket.Conn]bool),
@@ -55,7 +56,7 @@ func (ws *WebSocketServer) HandleConnections(w http.ResponseWriter, r *http.Requ
 		if err != nil {
 			log.Printf("Erro ao ler mensagem: %v", err)
 		}
-		var req controller.Request
+		var req application.Request
 		if err := json.Unmarshal(msg, &req); err != nil {
 			log.Printf("Erro ao decodificar aposta: %v", err)
 			continue
