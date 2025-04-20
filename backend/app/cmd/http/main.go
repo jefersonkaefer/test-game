@@ -1,46 +1,63 @@
 package main
 
 import (
+	"context"
 	"log"
 	"net/http"
+	"os"
+	"time"
 
 	"game/api/internal/application"
 	"game/api/internal/application/controller"
 	"game/api/internal/application/repository"
-	"game/api/internal/infra/logger"
+	"game/api/internal/domain/service"
 	"game/api/internal/infra/network"
+	"game/api/internal/infra/session"
 )
 
 func main() {
-	logger.Info("Starting HTTP server")
-
 	defer func() {
-		if r := recover(); r != nil {
-			logger.Errorf("Panic recovered: %v", r)
+		if err := recover(); err != nil {
+			log.Printf("panic recovery: %v", err)
 		}
 	}()
-
-	db, err := application.DbConn()
+	ctx := context.Background()
+	db, err := application.DbConn(ctx)
 	if err != nil {
-		log.Fatalf("Failed to connect to database: %v", err)
+		log.Fatalf("ERROR occurs: %v", err)
 	}
 	defer db.Close()
+	redis := application.RedisConn(ctx)
+	defer redis.Close()
 
-	cache := application.CacheConn()
-	defer cache.Close()
+	sessionManager := session.NewManager(redis, 24*time.Hour, os.Getenv("JWT_SECRET_KEY"))
 
-	clientRepo := repository.NewClient(db, cache)
-	clientCtrl := controller.NewClient(clientRepo)
+	clientsRepo := repository.NewClient(db, redis)
+	matchRepo := repository.NewMatch(db, redis)
+	walletRepo := repository.NewWallet(db, redis)
 
-	app := application.NewApp(clientCtrl)
+	clientsService := service.NewClientService(clientsRepo, walletRepo)
+	matchService := service.NewMatchService(matchRepo, clientsService)
+	authService := service.NewAuthService(clientsService, sessionManager)
 
-	server := network.NewWebServer(app)
+	clientsCtrl := controller.NewClientController(clientsService)
+	authCtrl := controller.NewAuthController(authService)
+	matchCtrl := controller.NewMatchController(matchService)
 
-	http.HandleFunc("/client", server.NewClient)
-	http.HandleFunc("/login", server.Login)
+	wsConfig := network.WSConfig{
+		ReadBufferSize:  1024,
+		WriteBufferSize: 1024,
+		ReadTimeout:     60 * time.Second,
+		WriteTimeout:    60 * time.Second,
+	}
 
-	logger.Info("HTTP server listening on :8000")
-	if err := http.ListenAndServe(":8000", nil); err != nil {
-		log.Fatalf("Failed to start HTTP server: %v", err)
+	api := network.NewWebServer(wsConfig, sessionManager, clientsCtrl, matchCtrl, authCtrl)
+
+	mux := http.NewServeMux()
+	mux.Handle("/", api)
+
+	log.Println("HTTP server started on port :8000")
+	if err := http.ListenAndServe(":8000", mux); err != nil {
+		log.Fatalf("An error occurred while starting HTTP: %v", err)
 	}
 }

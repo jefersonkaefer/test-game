@@ -1,0 +1,109 @@
+{
+	"info": {
+		"_postman_id": "1a2b3c4d-5e6f-7g8h-9i0j-1k2l3m4n5o6p",
+		"name": "Dice Game",
+		"description": "Coleção para testar o jogo de dados",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"item": [
+		{
+			"name": "Autenticação",
+			"item": [
+				{
+					"name": "Registrar Usuário",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"username\": \"teste\",\n    \"password\": \"senha123\"\n}"
+						},
+						"url": {
+							"raw": "http://localhost:8080/register",
+							"protocol": "http",
+							"host": ["localhost"],
+							"port": "8080",
+							"path": ["register"]
+						}
+					}
+				},
+				{
+					"name": "Login",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"username\": \"teste\",\n    \"password\": \"senha123\"\n}"
+						},
+						"url": {
+							"raw": "http://localhost:8080/login",
+							"protocol": "http",
+							"host": ["localhost"],
+							"port": "8080",
+							"path": ["login"]
+						}
+					}
+				}
+			]
+		},
+		{
+			"name": "WebSocket",
+			"item": [
+				{
+					"name": "WebSocket Connection",
+					"request": {
+						"method": "GET",
+						"url": {
+							"raw": "ws://localhost:8080/ws/{{token}}",
+							"protocol": "ws",
+							"host": ["localhost"],
+							"port": "8080",
+							"path": ["ws", "{{token}}"]
+						}
+					}
+				},
+				{
+					"name": "Wallet Request",
+					"request": {
+						"method": "WS",
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"type\": \"wallet\"\n}"
+						}
+					}
+				},
+				{
+					"name": "Play Request",
+					"request": {
+						"method": "WS",
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"type\": \"play\",\n    \"payload\": {\n        \"amount\": 100.0,\n        \"betType\": \"even\"\n    }\n}"
+						}
+					}
+				},
+				{
+					"name": "EndPlay Request",
+					"request": {
+						"method": "WS",
+						"body": {
+							"mode": "raw",
+							"raw": "{\n    \"type\": \"endPlay\"\n}"
+						}
+					}
+				}
+			]
+		}
+	]
+} 

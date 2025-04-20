@@ -3,51 +3,45 @@ package application
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"fmt"
-	"log"
-	"os"
-
-	"github.com/google/uuid"
-	cache "github.com/redis/go-redis/v9"
-	"github.com/sirupsen/logrus"
-
-	"game/api/internal/application/controller"
 	"game/api/internal/infra/database"
 	"game/api/internal/infra/logger"
+	"os"
+
+	cache "github.com/redis/go-redis/v9"
 )
 
-type App struct {
-	ClientCtrl *controller.Client
+const (
+	ActionNewPlayer    = "new_player"
+	ActionCreateGame   = "create_game" // Criar novo jogo
+	ActionJoinMatch    = "join_match"
+	ActionLeaveMatch   = "leave_match"
+	ActionChooseParity = "choose_parity" // Escolher se é ímpar ou par
+	ActionPlaceBet     = "place_bet"     // Fazer uma aposta
+	ActionMatchResult  = "match_result"  // Resultado da partida
+)
+
+type Request struct {
+	Action string      `json:"action"`
+	Body   interface{} `json:"body"`
 }
 
-func NewApp(ClientCtrl *controller.Client) *App {
-	logger.Info("Initializing application")
-	return &App{
-		ClientCtrl: ClientCtrl,
-	}
+type Response struct {
+	Error string      `json:"error"`
+	Data  interface{} `json:"data"`
 }
 
-func (a *App) NewGame() (uuid.UUID, error) {
-	logger.Debug("Creating new game")
-
-	gameID := uuid.New()
-
-	logger.WithFields(logrus.Fields{
-		"gameID": gameID,
-	}).Info("New game created successfully")
-
-	return gameID, nil
-}
-
-func DbConn() (*database.Postgres, error) {
+func DbConn(ctx context.Context) (*database.Postgres, error) {
 	logger.Debug("Establishing database connection")
-	host := os.Getenv("POSTGRES_HOST")
-	port := os.Getenv("POSTGRES_PORT")
-	user := os.Getenv("POSTGRES_USERNAME")
-	pw := os.Getenv("POSTGRES_PASSWORD")
-	db := os.Getenv("POSTGRES_DB")
-	connStr := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=disable", host, port, user, pw, db)
+
+	connStr := fmt.Sprintf(
+		"host=%s port=%s user=%s password=%s dbname=%s sslmode=disable",
+		os.Getenv("POSTGRES_HOST"),
+		os.Getenv("POSTGRES_PORT"),
+		os.Getenv("POSTGRES_USERNAME"),
+		os.Getenv("POSTGRES_PASSWORD"),
+		os.Getenv("POSTGRES_DB"),
+	)
 	logger.Info("Database connection established successfully")
 	conn, err := sql.Open("postgres", connStr)
 	if err != nil {
@@ -62,70 +56,17 @@ func DbConn() (*database.Postgres, error) {
 	return database.NewPostgres(conn), nil
 }
 
-func CacheConn() *database.Redis {
+func RedisConn(ctx context.Context) *cache.Client {
 	logger.Debug("Establishing cache connection")
-	addr := os.Getenv("REDIS_ADDR")
-	password := "t3st"
 	logger.Info("Cache connection established successfully")
 	client := cache.NewClient(&cache.Options{
-		Addr:     addr,
-		Password: password,
+		Addr:     os.Getenv("REDIS_ADDR"),
+		Password: os.Getenv("REDIS_PASSWORD"),
 		DB:       0,
 	})
-	if err := client.Ping(context.Background()); err != nil {
+	if err := client.Ping(ctx).Err(); err != nil {
 		logger.Errorf("Failed to ping cache: %v", err)
 		return nil
 	}
-	return database.NewRedis(client)
-}
-
-const (
-	ActionNewPlayer = "new_player"
-	ActionNewGame   = "new_game"
-	ActionNewMatch  = "new_match"
-)
-
-type Request struct {
-	Action string      `json:"action"`
-	Body   interface{} `json:"body"`
-}
-
-type Response struct {
-	Error string `json:"error"`
-}
-
-func (a *App) WebSocket(req Request) (res Response) {
-	logger.WithFields(logrus.Fields{
-		"action": req.Action,
-	}).Debug("Processing WebSocket request")
-
-	switch req.Action {
-	case ActionNewPlayer:
-		var r controller.NewClientRequest
-		body, ok := req.Body.(map[string]interface{})
-		if !ok {
-			res.Error = "Invalid request body format"
-			return res
-		}
-		jsonBody, _ := json.Marshal(body)
-		if err := json.Unmarshal(jsonBody, &r); err != nil {
-			log.Printf("Error parsing NewClientRequest: %v", err)
-			res.Error = "Invalid request body"
-			return res
-		}
-		_, err := a.ClientCtrl.NewClient(r)
-		if err != nil {
-			log.Printf("Error creating new client: %v", err)
-			res.Error = err.Error()
-			return res
-		}
-	default:
-		res.Error = fmt.Sprintf("Unknown action: %s", req.Action)
-	}
-
-	logger.WithFields(logrus.Fields{
-		"action": req.Action,
-	}).Debug("WebSocket request processed successfully")
-
-	return res
+	return client
 }

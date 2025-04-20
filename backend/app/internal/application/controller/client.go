@@ -1,84 +1,69 @@
 package controller
 
 import (
-	"log"
-	"os"
-	"time"
+	"context"
 
-	"github.com/golang-jwt/jwt/v5"
-
-	"game/api/internal/application/repository"
-	"game/api/internal/domain/entity"
+	"game/api/internal/application/dto"
+	"game/api/internal/domain/service"
 )
 
-type Client struct {
-	clientsRepo *repository.Client
+type ClientController struct {
+	clientService *service.ClientService
 }
 
-func NewClient(clientsRepo *repository.Client) *Client {
-	return &Client{
-		clientsRepo: clientsRepo,
+func NewClientController(clientService *service.ClientService) *ClientController {
+	return &ClientController{
+		clientService: clientService,
 	}
 }
 
-type NewClientRequest struct {
-	Username string `json:"username"`
-	Password string `json:"password"`
-}
-
-type NewClientResponse struct {
-	ClientID string `json:"client_id"`
-}
-
-func (c *Client) NewClient(req NewClientRequest) (res NewClientResponse, err error) {
-	client, err := entity.NewClient(req.Username, req.Password)
-	if err != nil {
-		log.Println("ERROR:", err)
-		return
-	}
-	err = c.clientsRepo.Add(client)
-	if err != nil {
-		log.Println("ERROR:", err)
-	}
-	res.ClientID = client.GetID().String()
-	return
-}
-
-type LoginRequest struct {
-	Username string `json:"username"`
-	Password string `json:"password"`
-}
-
-type LoginResponse struct {
-	Token string `json:"token"`
-}
-
-func (c *Client) Login(req LoginRequest) (res LoginResponse, err error) {
-	client, err := c.clientsRepo.GetByUsername(req.Username)
+func (c *ClientController) Create(ctx context.Context, username, password string) (res dto.CreateClientResponse, err error) {
+	clientID, err := c.clientService.Create(ctx, username, password)
 	if err != nil {
 		return
 	}
-	res.Token, err = GenerateJWT(client.GetID().String())
-	if err != nil {
-		log.Println("ERROR:", err)
+
+	res = dto.CreateClientResponse{
+		ID:       clientID,
+		Username: username,
 	}
 	return
 }
 
-func GenerateJWT(clientId string) (string, error) {
-	secret := []byte(os.Getenv("JWT_SECRET_KEY"))
-
-	claims := jwt.MapClaims{
-		"client_id": clientId,
-		"iss":       "game-api",
-		"exp":       time.Now().Add(24 * time.Hour).Unix(),
-		"iat":       time.Now().Unix(),
-	}
-
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	tokenString, err := token.SignedString(secret)
+func (c *ClientController) GetBalance(ctx context.Context, clientID string) (res dto.ClientDTO, err error) {
+	client, err := c.clientService.GetByUsername(ctx, clientID)
 	if err != nil {
-		return "", err
+		return
 	}
-	return tokenString, nil
+
+	res = dto.ClientDTO{
+		ID:       client.GetID().String(),
+		Username: client.GetUsername(),
+		Balance:  client.GetBalance(),
+	}
+	return
+}
+
+func (c *ClientController) UpdateBalance(ctx context.Context, clientID string, amount float64) (res dto.UpdateClientBalanceResponse, err error) {
+	client, err := c.clientService.GetByUsername(ctx, clientID)
+	if err != nil {
+		return
+	}
+
+	if amount > 0 {
+		client.Credit(amount)
+	} else {
+		client.Debit(-amount)
+	}
+
+	err = c.clientService.Update(ctx, client)
+	if err != nil {
+		return
+	}
+
+	res = dto.UpdateClientBalanceResponse{
+		ID:      client.GetID().String(),
+		Balance: client.GetBalance(),
+	}
+	return
 }

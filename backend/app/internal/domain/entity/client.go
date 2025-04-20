@@ -7,11 +7,6 @@ import (
 	"game/api/internal/infra/database"
 )
 
-type Wallet struct {
-	guid    uuid.UUID
-	balance float64
-}
-
 type Client struct {
 	id       uuid.UUID
 	username string
@@ -20,7 +15,7 @@ type Client struct {
 	wallet   Wallet
 }
 
-func NewClient(username, password string) (Client, error) {
+func NewClient(username, password string, balance float64) (Client, error) {
 	hashedPassword, err := HashPassword(password)
 	if err != nil {
 		return Client{}, err
@@ -33,7 +28,7 @@ func NewClient(username, password string) (Client, error) {
 		inPlay:   false,
 		wallet: Wallet{
 			guid:    uuid.New(),
-			balance: 0,
+			balance: balance,
 		},
 	}, nil
 }
@@ -48,6 +43,10 @@ func (c *Client) GetUsername() string {
 
 func (c *Client) GetPassword() string {
 	return c.password
+}
+
+func (c *Client) GetWalletID() uuid.UUID {
+	return c.wallet.guid
 }
 
 func (c *Client) GetBalance() float64 {
@@ -83,8 +82,8 @@ func HashPassword(password string) (string, error) {
 	return string(bytes), err
 }
 
-func CheckPasswordHash(password, hash string) bool {
-	err := bcrypt.CompareHashAndPassword([]byte(hash), []byte(password))
+func (c *Client) CheckPasswordHash(password string) bool {
+	err := bcrypt.CompareHashAndPassword([]byte(c.password), []byte(password))
 	return err == nil
 }
 

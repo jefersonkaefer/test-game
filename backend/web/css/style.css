@@ -1,0 +1,203 @@
+/* Estilos personalizados */
+#chatMessages {
+    background-color: #f9fafb;
+}
+
+.message {
+    margin-bottom: 0.5rem;
+    padding: 0.5rem;
+    border-radius: 0.375rem;
+}
+
+.message.system {
+    background-color: #e5e7eb;
+    color: #4b5563;
+}
+
+.message.user {
+    background-color: #dbeafe;
+    color: #1e40af;
+    margin-left: 2rem;
+}
+
+.message.other {
+    background-color: #f3f4f6;
+    color: #374151;
+    margin-right: 2rem;
+}
+
+/* Animações */
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+.message {
+    animation: fadeIn 0.3s ease-in;
+}
+
+/* Scrollbar personalizada */
+#chatMessages::-webkit-scrollbar {
+    width: 8px;
+}
+
+#chatMessages::-webkit-scrollbar-track {
+    background: #f1f1f1;
+}
+
+#chatMessages::-webkit-scrollbar-thumb {
+    background: #888;
+    border-radius: 4px;
+}
+
+#chatMessages::-webkit-scrollbar-thumb:hover {
+    background: #555;
+}
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: Arial, sans-serif;
+    background-color: #f0f0f0;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+}
+
+.container {
+    width: 100%;
+    max-width: 800px;
+    padding: 20px;
+}
+
+.game-container {
+    background-color: white;
+    border-radius: 10px;
+    padding: 20px;
+    box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+}
+
+h1 {
+    text-align: center;
+    color: #333;
+    margin-bottom: 20px;
+}
+
+#gameArea {
+    min-height: 400px;
+    border: 2px solid #ddd;
+    border-radius: 5px;
+    margin-bottom: 20px;
+    padding: 20px;
+}
+
+.controls {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+button {
+    padding: 10px 20px;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 16px;
+    transition: background-color 0.3s;
+}
+
+#startGame {
+    background-color: #4CAF50;
+    color: white;
+}
+
+#startGame:hover {
+    background-color: #45a049;
+}
+
+#logout {
+    background-color: #f44336;
+    color: white;
+}
+
+#logout:hover {
+    background-color: #da190b;
+}
+
+.auth-container {
+    background-color: white;
+    padding: 30px;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    max-width: 400px;
+    margin: 0 auto;
+}
+
+.tabs {
+    display: flex;
+    margin-bottom: 20px;
+    border-bottom: 1px solid #ddd;
+}
+
+.tab {
+    padding: 10px 20px;
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 16px;
+    color: #666;
+    transition: all 0.3s;
+}
+
+.tab.active {
+    color: #1a73e8;
+    border-bottom: 2px solid #1a73e8;
+}
+
+.form-container {
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+}
+
+.form-container.hidden {
+    display: none;
+}
+
+.input-container {
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+}
+
+input {
+    padding: 12px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 16px;
+}
+
+input:focus {
+    outline: none;
+    border-color: #1a73e8;
+}
+
+button {
+    padding: 12px;
+    background-color: #1a73e8;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    font-size: 16px;
+    cursor: pointer;
+    transition: background-color 0.3s;
+}
+
+button:hover {
+    background-color: #1557b0;
+} 
