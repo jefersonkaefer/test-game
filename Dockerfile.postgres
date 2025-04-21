@@ -1,0 +1,5 @@
+FROM postgres:15
+
+COPY backend/migrations /docker-entrypoint-initdb.d/
+
+RUN chmod +x /docker-entrypoint-initdb.d/*.sql 

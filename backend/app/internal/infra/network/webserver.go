@@ -3,9 +3,9 @@ package network
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
-	"sync"
 	"time"
 
 	"game/api/internal/application/controller"
@@ -14,27 +14,19 @@ import (
 	"game/api/internal/infra/logger"
 	"game/api/internal/infra/session"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/gorilla/websocket"
-	"github.com/sirupsen/logrus"
 )
 
 const (
-	ActionCreateMatch  string = "create_match"
-	ActionJoinMatch    string = "join_match"
-	ActionLeaveMatch   string = "leave_match"
-	ActionPlaceBet     string = "place_bet"
-	ActionChooseParity string = "choose_parity"
-	ActionGetMatch     string = "get_match"
-	ActionStartMatch   string = "start_match"
-	ActionEndMatch     string = "end_match"
+	ActionNewMatch string = "new_match"
+	ActionPlaceBet string = "place_bet"
+	ActionWallet   string = "wallet"
+	ActionEndMatch string = "end_match"
+	pingPeriod            = 30 * time.Second
+	pongWait              = 60 * time.Second
+	writeWait             = 10 * time.Second
 )
-
-type WSConfig struct {
-	ReadBufferSize  int
-	WriteBufferSize int
-	ReadTimeout     time.Duration
-	WriteTimeout    time.Duration
-}
 
 type WSResponse struct {
 	Action string      `json:"action"`
@@ -52,184 +44,75 @@ type Client struct {
 	Send chan []byte
 }
 
-type webServer struct {
-	clientCtrl *controller.ClientController
-	matchCtrl  *controller.MatchController
-	authCtrl   *controller.AuthController
-	sessionMgr *session.Manager
-	upgrader   websocket.Upgrader
-	mu         sync.Mutex
-	clients    map[string]*Client
+type WebServer struct {
+	*chi.Mux
+	clientController *controller.ClientController
+	authController   *controller.AuthController
+	matchController  *controller.MatchController
+	upgrader         websocket.Upgrader
+	clients          map[string]*Client
+	sessionManager   *session.Manager
 }
 
 func NewWebServer(
-	cfg WSConfig,
-	sessionMgr *session.Manager,
-	clientCtrl *controller.ClientController,
-	matchCtrl *controller.MatchController,
-	authCtrl *controller.AuthController,
-) *webServer {
-	return &webServer{
-		clientCtrl: clientCtrl,
-		matchCtrl:  matchCtrl,
-		sessionMgr: sessionMgr,
-		authCtrl:   authCtrl,
+	clientController *controller.ClientController,
+	authController *controller.AuthController,
+	matchController *controller.MatchController,
+	sessionManager *session.Manager,
+) *WebServer {
+	ws := &WebServer{
+		Mux:              chi.NewMux(),
+		clientController: clientController,
+		authController:   authController,
+		matchController:  matchController,
+		sessionManager:   sessionManager,
 		upgrader: websocket.Upgrader{
-			ReadBufferSize:  cfg.ReadBufferSize,
-			WriteBufferSize: cfg.WriteBufferSize,
+			ReadBufferSize:  1024,
+			WriteBufferSize: 1024,
 			CheckOrigin: func(r *http.Request) bool {
 				return true
 			},
 		},
 		clients: make(map[string]*Client),
 	}
+
+	ws.setupRoutes()
+	return ws
 }
 
-func (ws *webServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	// Rotas públicas
-	switch r.URL.Path {
-	case "/client":
-		ws.NewClient(w, r)
-	case "/login":
-		ws.Authenticate(w, r)
-	default:
-		protected := ws.sessionMgr.ValidateJWT(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			switch r.URL.Path {
-			case "/ws":
-				ws.handleConnection(w, r)
-			default:
-				http.NotFound(w, r)
-			}
-		}))
-		protected.ServeHTTP(w, r)
-	}
+func (ws *WebServer) setupRoutes() {
+	ws.Post("/register", ws.register)
+	ws.Post("/login", ws.login)
+	ws.Post("/logout", ws.sessionManager.ValidateJWT(ws.logout))
+	ws.Get("/wallet", ws.sessionManager.ValidateJWT(ws.wallet))
+	ws.Get("/ws", ws.sessionManager.ValidateJWT(ws.handleWebSocket))
 }
 
-func (ws *webServer) handleConnection(w http.ResponseWriter, r *http.Request) {
-	conn, err := ws.upgrader.Upgrade(w, r, nil)
-	if err != nil {
-		logger.Error("Failed to upgrade connection", logrus.Fields{"error": err})
-		return
-	}
-
-	sessionID := session.GenerateID()
-	client := &Client{
-		Conn: conn,
-	}
-
-	ws.clients[sessionID] = client
-	if err := conn.WriteJSON(WSResponse{
-		Action: "connection",
-		Data: map[string]interface{}{
-			"sessionID": sessionID,
-		},
-	}); err != nil {
-		logger.Error("Failed to send connection message", logrus.Fields{"error": err})
-		return
-	}
-
-	for {
-		_, message, err := conn.ReadMessage()
-		if err != nil {
-			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-				logger.Error("WebSocket read error", logrus.Fields{"error": err})
-			}
-			break
-		}
-
-		ctx := context.WithValue(r.Context(), session.ContextKeySessionID, sessionID)
-
-		var request WebSocketRequest
-		if err := json.Unmarshal(message, &request); err != nil {
-			logger.Error("Failed to parse WebSocket message", logrus.Fields{"error": err})
-			continue
-		}
-
-		ws.handleRequest(ctx, conn, request)
-	}
-
-	ws.mu.Lock()
-	delete(ws.clients, sessionID)
-	ws.mu.Unlock()
-}
-
-type SuccessResponse struct {
-	Status    string      `json:"status"`
-	Code      int         `json:"code"`
-	Message   string      `json:"message,omitempty"`
-	Data      interface{} `json:"data,omitempty"`
-	Timestamp time.Time   `json:"timestamp"`
-}
-
-type ErrorResponse struct {
-	Status    string      `json:"status"`
-	Code      int         `json:"code"`
-	Error     string      `json:"error"`
-	Message   string      `json:"message,omitempty"`
-	Details   interface{} `json:"details,omitempty"`
-	Timestamp time.Time   `json:"timestamp"`
-}
-
-func JSONSuccess(w http.ResponseWriter, code int, message string, data interface{}) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(code)
-	resp := SuccessResponse{
-		Status:    "success",
-		Code:      code,
-		Message:   message,
-		Data:      data,
-		Timestamp: time.Now().UTC(),
-	}
-	json.NewEncoder(w).Encode(resp)
-}
-
-func JSONError(w http.ResponseWriter, code int, errCode, message string, details interface{}) {
-	w.Header().Set("Content-Type", "application/json")
-	resp := ErrorResponse{
-		Status:    "error",
-		Code:      code,
-		Error:     errCode,
-		Message:   message,
-		Details:   details,
-		Timestamp: time.Now().UTC(),
-	}
-	json.NewEncoder(w).Encode(resp)
-}
-
-func (ws *webServer) NewClient(w http.ResponseWriter, r *http.Request) {
+func (ws *WebServer) register(w http.ResponseWriter, r *http.Request) {
 	var req dto.CreateClientRequest
-
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
 	}
-	res, err := ws.clientCtrl.Create(r.Context(), req.Username, req.Password)
+
+	res, err := ws.clientController.Create(r.Context(), req.Username, req.Password)
 	if err != nil {
 		if err == errs.ErrUsernameExists {
-			JSONError(w, http.StatusConflict,
-				"USERNAME_ALREADY_EXISTS",
-				"This username already exists",
-				nil,
-			)
+			http.Error(w, "Username already exists", http.StatusConflict)
 			return
 		}
-		JSONError(w, http.StatusInternalServerError,
-			http.StatusText(http.StatusInternalServerError),
-			http.StatusText(http.StatusInternalServerError),
-			nil,
-		)
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
-	JSONSuccess(w, http.StatusCreated,
-		"Client created successfully.",
-		res,
-	)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(res)
 }
 
-func (ws *webServer) Authenticate(w http.ResponseWriter, r *http.Request) {
+func (ws *WebServer) login(w http.ResponseWriter, r *http.Request) {
 	var req dto.ClientLoginRequest
-
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		JSONError(w, http.StatusBadRequest, "INVALID_REQUEST", "Invalid request body", nil)
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
 
@@ -242,177 +125,238 @@ func (ws *webServer) Authenticate(w http.ResponseWriter, r *http.Request) {
 	ctx := context.WithValue(r.Context(), session.ContextKeyIP, ip)
 	ctx = context.WithValue(ctx, session.ContextKeyUserAgent, userAgent)
 
-	res, err := ws.authCtrl.Login(ctx, req.Username, req.Password)
+	token, err := ws.authController.Login(ctx, req.Username, req.Password)
 	if err != nil {
 		switch err {
 		case errs.ErrNotFound:
-			JSONError(w, http.StatusNotFound, "NOT_FOUND", "Client not found", nil)
+			http.Error(w, "Client not found", http.StatusNotFound)
 		case errs.ErrInvalidPassword:
-			JSONError(w, http.StatusUnauthorized, "INVALID_PASSWORD", "Invalid password", nil)
+			http.Error(w, "Invalid password", http.StatusUnauthorized)
 		default:
-			JSONError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Internal server error", nil)
+			http.Error(w, "Internal server error", http.StatusInternalServerError)
 		}
 		return
 	}
 
-	JSONSuccess(w, http.StatusOK, "Login successful", res)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"token": token})
 }
 
-func (ws *webServer) handleRequest(ctx context.Context, conn *websocket.Conn, request WebSocketRequest) {
+func (ws *WebServer) logout(w http.ResponseWriter, r *http.Request) {
+	token := r.Header.Get("Authorization")
+	clientID, ok := r.Context().Value(session.ContextKeyClientID).(string)
+	if !ok || clientID == "" {
+		http.Error(w, "client ID is required", http.StatusUnauthorized)
+		return
+	}
+	ws.authController.Logout(r.Context(), clientID, token)
+	w.WriteHeader(http.StatusOK)
+}
+
+func (ws *WebServer) wallet(w http.ResponseWriter, r *http.Request) {
+	clientID, ok := r.Context().Value(session.ContextKeyClientID).(string)
+	if !ok || clientID == "" {
+		http.Error(w, "client ID is required", http.StatusUnauthorized)
+		return
+	}
+	balance, err := ws.clientController.GetBalance(r.Context(), clientID)
+	if err != nil {
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+
+	json.NewEncoder(w).Encode(balance)
+}
+
+func (ws *WebServer) handleWebSocket(w http.ResponseWriter, r *http.Request) {
+	clientID, ok := r.Context().Value(session.ContextKeyClientID).(string)
+	if !ok || clientID == "" {
+		http.Error(w, "client ID is required", http.StatusUnauthorized)
+		return
+	}
+
+	conn, err := ws.upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		logger.Errorf("Error upgrading connection: %v", err)
+		return
+	}
+
+	client := &Client{
+		Conn: conn,
+		Send: make(chan []byte, 256),
+	}
+
+	ws.clients[clientID] = client
+
+	ctx := context.WithValue(r.Context(), session.ContextKeyClientID, clientID)
+
+	go ws.handleConnection(ctx, conn)
+}
+
+func (ws *WebServer) handleConnection(ctx context.Context, conn *websocket.Conn) {
+	clientID, _ := ctx.Value(session.ContextKeyClientID).(string)
+	logger.Infof("New WebSocket connection established for client %s", clientID)
+
+	defer func() {
+		logger.Infof("Closing WebSocket connection for client %s", clientID)
+		conn.Close()
+		if clientID != "" {
+			delete(ws.clients, clientID)
+		}
+	}()
+
+	conn.SetPongHandler(func(string) error {
+		conn.SetReadDeadline(time.Now().Add(pongWait))
+		return nil
+	})
+
+	conn.SetPingHandler(func(string) error {
+		return conn.WriteControl(websocket.PongMessage, []byte{}, time.Now().Add(writeWait))
+	})
+
+	conn.SetReadDeadline(time.Now().Add(pongWait))
+
+	go func() {
+		pingCtx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		ticker := time.NewTicker(pingPeriod)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ticker.C:
+				if err := conn.WriteControl(websocket.PingMessage, []byte{}, time.Now().Add(writeWait)); err != nil {
+					logger.Errorf("Error sending ping: %v", err)
+					return
+				}
+			case <-pingCtx.Done():
+				return
+			}
+		}
+	}()
+
+	for {
+		var request WebSocketRequest
+		err := conn.ReadJSON(&request)
+		if err != nil {
+			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
+				logger.Errorf("Error reading message: %v", err)
+			}
+			break
+		}
+
+		conn.SetReadDeadline(time.Now().Add(pongWait))
+
+		response := ws.handleRequest(ctx, request)
+		if err := conn.WriteJSON(response); err != nil {
+			logger.Errorf("Error writing response: %v", err)
+			break
+		}
+	}
+}
+
+func (ws *WebServer) handleRequest(ctx context.Context, request WebSocketRequest) *WSResponse {
+	clientID, _ := ctx.Value(session.ContextKeyClientID).(string)
+	logger.Infof("Handling request from client %s: %s", clientID, request.Action)
+
+	msgCtx := context.Background()
+	msgCtx = context.WithValue(msgCtx, session.ContextKeyClientID, clientID)
+
+	msgCtx, cancel := context.WithTimeout(msgCtx, 1000*time.Second)
+	defer cancel()
+
 	var response *WSResponse
 
 	switch request.Action {
-	case ActionCreateMatch:
-		response = ws.handleCreateMatch(ctx, request.Data)
-	case ActionJoinMatch:
-		response = ws.handleJoinMatch(ctx, request.Data)
-	case ActionLeaveMatch:
-		response = ws.handleLeaveMatch(ctx, request.Data)
+	case ActionNewMatch:
+		response = ws.handleNewMatch(msgCtx)
 	case ActionPlaceBet:
-		response = ws.handlePlaceBet(ctx, request.Data)
-	case ActionGetMatch:
-		response = ws.handleGetMatch(ctx, request.Data)
-	case ActionStartMatch:
-		response = ws.handleStartMatch(ctx, request.Data)
+		response = ws.handleBet(msgCtx, request.Data)
+	case ActionWallet:
+		response = ws.handleWallet(msgCtx)
 	case ActionEndMatch:
-		response = ws.handleEndMatch(ctx, request.Data)
+		response = ws.handleEndMatch(msgCtx)
 	default:
-		response = &WSResponse{
-			Action: "error",
-			Error:  fmt.Sprintf("invalid action: %s", request.Action),
+		logger.Errorf("Invalid action from client %s: %s", clientID, request.Action)
+		response = ws.errorResponse("Invalid action")
+	}
+
+	return response
+}
+
+func (ws *WebServer) handleNewMatch(ctx context.Context) *WSResponse {
+	clientID, ok := ctx.Value(session.ContextKeyClientID).(string)
+	if !ok || clientID == "" {
+		return ws.errorResponse("client ID is required")
+	}
+
+	err := ws.matchController.NewMatch(ctx, clientID)
+	if err != nil {
+		logger.Errorf("Failed to new match: %v", err)
+		return ws.errorResponse(err.Error())
+	}
+	return ws.successResponse(ActionNewMatch, nil)
+}
+
+func (ws *WebServer) handleBet(ctx context.Context, body interface{}) *WSResponse {
+	var req struct {
+		Amount float64 `json:"amount"`
+		Choice string  `json:"choice"`
+	}
+	if err := ws.unmarshalRequest(body, &req); err != nil {
+		logger.Errorf("Error unmarshaling bet request: %v", err)
+		return ws.errorResponse(err.Error())
+	}
+
+	clientID, ok := ctx.Value(session.ContextKeyClientID).(string)
+	if !ok || clientID == "" {
+		logger.Errorf("Invalid client ID in context")
+		return ws.errorResponse("client ID is required")
+	}
+
+	result, err := ws.matchController.Bet(ctx, clientID, req.Amount, req.Choice)
+	if err != nil {
+		if errors.Is(err, context.Canceled) {
+			logger.Errorf("Bet operation canceled for client %s: %v", clientID, err)
+			return ws.errorResponse("operation timed out, please try again")
 		}
+		logger.Errorf("Error placing bet for client %s: %v", clientID, err)
+		return ws.errorResponse(err.Error())
 	}
 
-	if response != nil {
-		conn.WriteJSON(response)
-	}
+	return ws.successResponse(ActionPlaceBet, result)
 }
 
-func (ws *webServer) handleCreateMatch(ctx context.Context, body interface{}) *WSResponse {
-	var req dto.CreateMatchRequest
-	if err := ws.unmarshalRequest(body, &req); err != nil {
-		return ws.errorResponse("invalid request format: " + err.Error())
-	}
-
+func (ws *WebServer) handleWallet(ctx context.Context) *WSResponse {
 	clientID, ok := ctx.Value(session.ContextKeyClientID).(string)
 	if !ok || clientID == "" {
-		return ws.errorResponse(errs.ErrInvalidToken.Error())
+		return ws.errorResponse("client ID is required")
 	}
 
-	match, err := ws.matchCtrl.CreateMatch(ctx, clientID, req)
+	wallet, err := ws.clientController.GetBalance(ctx, clientID)
 	if err != nil {
 		return ws.errorResponse(err.Error())
 	}
 
-	return ws.successResponse("match_created", match)
+	return ws.successResponse(ActionWallet, wallet)
 }
 
-func (ws *webServer) handleJoinMatch(ctx context.Context, body interface{}) *WSResponse {
-	var req dto.AddPlayerRequest
-	if err := ws.unmarshalRequest(body, &req); err != nil {
-		return ws.errorResponse("invalid request format: " + err.Error())
-	}
-
+func (ws *WebServer) handleEndMatch(ctx context.Context) *WSResponse {
 	clientID, ok := ctx.Value(session.ContextKeyClientID).(string)
 	if !ok || clientID == "" {
-		return ws.errorResponse(errs.ErrInvalidToken.Error())
+		return ws.errorResponse("client ID is required")
 	}
 
-	res, err := ws.matchCtrl.JoinMatch(ctx, req.MatchID, clientID)
+	err := ws.matchController.EndMatch(ctx, clientID)
 	if err != nil {
 		return ws.errorResponse(err.Error())
 	}
-
-	return ws.successResponse("match_joined", res)
+	return ws.successResponse(ActionEndMatch, nil)
 }
 
-func (ws *webServer) handleLeaveMatch(ctx context.Context, body interface{}) *WSResponse {
-	var req dto.AddPlayerRequest
-	if err := ws.unmarshalRequest(body, &req); err != nil {
-		return ws.errorResponse("invalid request format: " + err.Error())
-	}
-
-	clientID, ok := ctx.Value(session.ContextKeyClientID).(string)
-	if !ok || clientID == "" {
-		return ws.errorResponse(errs.ErrInvalidToken.Error())
-	}
-
-	err := ws.matchCtrl.LeaveMatch(ctx, req)
-	if err != nil {
-		return ws.errorResponse(err.Error())
-	}
-
-	return ws.successResponse("match_left", nil)
-}
-
-func (ws *webServer) handlePlaceBet(ctx context.Context, body interface{}) *WSResponse {
-	var req dto.CreateBetRequest
-	if err := ws.unmarshalRequest(body, &req); err != nil {
-		return ws.errorResponse("invalid request format: " + err.Error())
-	}
-
-	clientID, ok := ctx.Value(session.ContextKeyClientID).(string)
-	if !ok || clientID == "" {
-		return ws.errorResponse(errs.ErrInvalidToken.Error())
-	}
-
-	err := ws.matchCtrl.PlaceBetAndChoose(ctx, clientID, req)
-	if err != nil {
-		return ws.errorResponse(err.Error())
-	}
-
-	return ws.successResponse("bet_placed", nil)
-}
-
-func (ws *webServer) handleGetMatch(ctx context.Context, body interface{}) *WSResponse {
-	var reqData struct {
-		MatchID string `json:"match_id"`
-	}
-	if err := ws.unmarshalRequest(body, &reqData); err != nil {
-		return ws.errorResponse(err.Error())
-	}
-
-	match, err := ws.matchCtrl.GetMatch(ctx, reqData.MatchID)
-	if err != nil {
-		return ws.errorResponse(err.Error())
-	}
-
-	return ws.successResponse(ActionGetMatch, match)
-}
-
-func (ws *webServer) handleStartMatch(ctx context.Context, body interface{}) *WSResponse {
-	var reqData struct {
-		MatchID string `json:"match_id"`
-	}
-	if err := ws.unmarshalRequest(body, &reqData); err != nil {
-		return ws.errorResponse(err.Error())
-	}
-
-	err := ws.matchCtrl.StartMatch(ctx, reqData.MatchID)
-	if err != nil {
-		return ws.errorResponse(err.Error())
-	}
-
-	return ws.successResponse("match_started", nil)
-}
-
-func (ws *webServer) handleEndMatch(ctx context.Context, body interface{}) *WSResponse {
-	var reqData struct {
-		MatchID string `json:"match_id"`
-	}
-	if err := ws.unmarshalRequest(body, &reqData); err != nil {
-		return ws.errorResponse(err.Error())
-	}
-
-	err := ws.matchCtrl.EndMatch(ctx, reqData.MatchID)
-	if err != nil {
-		return ws.errorResponse(err.Error())
-	}
-
-	return ws.successResponse("match_ended", nil)
-}
-
-func (ws *webServer) unmarshalRequest(body interface{}, req interface{}) error {
+func (ws *WebServer) unmarshalRequest(body interface{}, req interface{}) error {
 	data, err := json.Marshal(body)
 	if err != nil {
 		return fmt.Errorf("failed to marshal request body: %v", err)
@@ -425,16 +369,32 @@ func (ws *webServer) unmarshalRequest(body interface{}, req interface{}) error {
 	return nil
 }
 
-func (ws *webServer) errorResponse(msg string) *WSResponse {
+func (ws *WebServer) errorResponse(msg string) *WSResponse {
 	return &WSResponse{
 		Action: "error",
 		Error:  msg,
 	}
 }
 
-func (ws *webServer) successResponse(action string, data interface{}) *WSResponse {
+func (ws *WebServer) successResponse(action string, data interface{}) *WSResponse {
 	return &WSResponse{
 		Action: action,
 		Data:   data,
 	}
+}
+
+func (ws *WebServer) Start(port int) error {
+	server := &http.Server{
+		Addr:         fmt.Sprintf(":%d", port),
+		Handler:      ws,
+		ReadTimeout:  30 * time.Second,
+		WriteTimeout: 30 * time.Second,
+	}
+
+	logger.Infof("Server starting on port %d", port)
+	return server.ListenAndServe()
+}
+
+func (ws *WebServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	ws.Mux.ServeHTTP(w, r)
 }

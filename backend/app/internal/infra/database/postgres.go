@@ -1,8 +1,7 @@
 package database
 
 import (
-	"database/sql"
-
+	"github.com/jmoiron/sqlx"
 	_ "github.com/lib/pq"
 
 	"game/api/internal/infra/logger"
@@ -14,12 +13,23 @@ const (
 )
 
 type Postgres struct {
-	conn *sql.DB
+	db *sqlx.DB
 }
 
-func NewPostgres(conn *sql.DB) *Postgres {
+func NewPostgres(db *sqlx.DB) *Postgres {
 	logger.Info("Initializing PostgreSQL connection")
 	return &Postgres{
-		conn: conn,
+		db: db,
 	}
+}
+
+func (pg *Postgres) Close() error {
+	logger.Debug("Closing PostgreSQL connection")
+	err := pg.db.Close()
+	if err != nil {
+		logger.Errorf("Failed to close PostgreSQL connection: %v", err)
+		return err
+	}
+	logger.Info("PostgreSQL connection closed successfully")
+	return nil
 }

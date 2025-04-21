@@ -8,28 +8,9 @@ import (
 	"game/api/internal/infra/logger"
 	"os"
 
+	"github.com/jmoiron/sqlx"
 	cache "github.com/redis/go-redis/v9"
 )
-
-const (
-	ActionNewPlayer    = "new_player"
-	ActionCreateGame   = "create_game" // Criar novo jogo
-	ActionJoinMatch    = "join_match"
-	ActionLeaveMatch   = "leave_match"
-	ActionChooseParity = "choose_parity" // Escolher se é ímpar ou par
-	ActionPlaceBet     = "place_bet"     // Fazer uma aposta
-	ActionMatchResult  = "match_result"  // Resultado da partida
-)
-
-type Request struct {
-	Action string      `json:"action"`
-	Body   interface{} `json:"body"`
-}
-
-type Response struct {
-	Error string      `json:"error"`
-	Data  interface{} `json:"data"`
-}
 
 func DbConn(ctx context.Context) (*database.Postgres, error) {
 	logger.Debug("Establishing database connection")
@@ -53,7 +34,7 @@ func DbConn(ctx context.Context) (*database.Postgres, error) {
 		return nil, err
 	}
 	logger.Info("Database connection pinged successfully")
-	return database.NewPostgres(conn), nil
+	return database.NewPostgres(sqlx.NewDb(conn, "postgres")), nil
 }
 
 func RedisConn(ctx context.Context) *cache.Client {

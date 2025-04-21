@@ -2,10 +2,13 @@ package controller
 
 import (
 	"context"
+	"strings"
 
 	"game/api/internal/domain/service"
 	"game/api/internal/infra/logger"
 	"game/api/internal/infra/session"
+
+	"github.com/google/uuid"
 )
 
 type AuthController struct {
@@ -31,8 +34,14 @@ func (c *AuthController) Login(ctx context.Context, username, password string) (
 	return token, nil
 }
 
-func (c *AuthController) Logout(ctx context.Context, token string) error {
-	err := c.authService.Logout(ctx, token)
+func (c *AuthController) Logout(ctx context.Context, clientID, token string) error {
+	token = strings.TrimPrefix(token, "Bearer ")
+	clientIDUUID, err := uuid.Parse(clientID)
+	if err != nil {
+		logger.Errorf("Failed to parse clientID: %v", err)
+		return err
+	}
+	err = c.authService.Logout(ctx, clientIDUUID, token)
 	if err != nil {
 		logger.Errorf("Failed to logout: %v", err)
 		return err

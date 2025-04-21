@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ímpar ou Par - Apostas</title>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="css/style.css">
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="js/config.js"></script>
+    <script src="js/WebSocketManager.js"></script>
+    <script src="js/script.js"></script>
+</head>
+<body>
+    <div class="game-container">
+        <header class="game-header">
+            <div class="user-info">
+                <i class="fas fa-user-circle"></i>
+                <span id="username"></span>
+            </div>
+            <div class="wallet-info">
+                <i class="fas fa-wallet"></i>
+                <span id="balance">R$ 0,00</span>
+            </div>
+            <button id="logout" class="btn-logout">
+                <i class="fas fa-sign-out-alt"></i>
+                Sair
+            </button>
+        </header>
+
+        <main class="game-main">
+            <div id="waitingArea" class="game-section">
+                <h1>Ímpar ou Par</h1>
+                <p class="game-description">
+                    Escolha ímpar ou par e faça sua aposta!
+                </p>
+                <button id="newMatch" class="btn-primary">
+                    <i class="fas fa-play"></i>
+                    Nova Partida
+                </button>
+            </div>
+
+            <div id="gamePlayArea" class="game-section hidden">
+                <div class="game-status">
+                    <h2>Partida em Andamento</h2>
+                    <p>Faça sua escolha e aposta</p>
+                </div>
+
+                <div class="betting-controls">
+                    <div class="choice-buttons">
+                        <button id="choiceOdd" class="btn-choice" data-choice="odd">
+                            <i class="fas fa-dice-one"></i>
+                            Ímpar
+                        </button>
+                        <button id="choiceEven" class="btn-choice" data-choice="even">
+                            <i class="fas fa-dice-two"></i>
+                            Par
+                        </button>
+                    </div>
+
+                    <div class="bet-amount">
+                        <label for="betAmount">Valor da Aposta (R$)</label>
+                        <div class="amount-controls">
+                            <button class="btn-amount" data-action="decrease">
+                                <i class="fas fa-minus"></i>
+                            </button>
+                            <input type="number" id="betAmount" value="10" min="1" step="1">
+                            <button class="btn-amount" data-action="increase">
+                                <i class="fas fa-plus"></i>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="betting-actions flex justify-center items-center gap-4">
+                        <button id="placeBet" class="btn-primary flex items-center justify-center gap-2 min-w-[150px] px-6 py-3 text-base font-medium">
+                            <i class="fas fa-coins"></i>
+                            Apostar
+                        </button>
+                        <button id="endMatchGame" class="btn-secondary flex items-center justify-center gap-2 min-w-[150px] px-6 py-3 text-base font-medium">
+                            <i class="fas fa-times"></i>
+                            Finalizar Partida
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div id="gameResult" class="game-section hidden">
+                <div class="result-animation">
+                    <div class="number-display">
+                        <div class="number-label">Número Sorteado</div>
+                        <span id="resultNumber">?</span>
+                    </div>
+                    <div class="result-info">
+                        <div class="result-icon">
+                            <i class="fas fa-question"></i>
+                        </div>
+                        <h2>Resultado</h2>
+                        <p id="resultMessage"></p>
+                    </div>
+                </div>
+
+                <div class="result-actions">
+                    <button id="playAgain" class="btn-primary">
+                        <i class="fas fa-redo"></i>
+                        Nova Aposta
+                    </button>
+                    <button id="endMatch" class="btn-secondary">
+                        <i class="fas fa-times"></i>
+                        Encerrar Partida
+                    </button>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <div id="errorModal" class="modal hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>
+                    <i class="fas fa-exclamation-circle"></i>
+                    Erro
+                </h3>
+                <button class="modal-close">×</button>
+            </div>
+            <div class="modal-body">
+                <p id="errorMessage"></p>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-primary modal-close">OK</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="loadingOverlay" class="loading-overlay hidden">
+        <div class="spinner"></div>
+        <p>Carregando...</p>
+    </div>
+</body>
+</html> 

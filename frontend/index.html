@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login - Ímpar ou Par</title>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <link rel="stylesheet" href="css/style.css">
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="js/config.js"></script>
+    <script src="js/login.js"></script>
+</head>
+<body>
+    <div class="container">
+        <div class="auth-container">
+            <div class="tabs">
+                <button id="tabLogin" class="tab active">Login</button>
+                <button id="tabRegister" class="tab">Registro</button>
+            </div>
+
+            <div id="loginForm" class="form-container">
+                <div class="input-container">
+                    <input type="text" id="usernameInput" placeholder="Nome de usuário">
+                    <input type="password" id="passwordInput" placeholder="Senha">
+                </div>
+                <button id="btnLogin" class="btn-primary">
+                    <i class="fas fa-sign-in-alt"></i>
+                    Entrar
+                </button>
+            </div>
+
+            <div id="registerForm" class="form-container hidden">
+                <div class="input-container">
+                    <input type="text" id="registerUsername" placeholder="Nome de usuário">
+                    <input type="password" id="registerPassword" placeholder="Senha">
+                    <input type="password" id="confirmPassword" placeholder="Confirmar senha">
+                </div>
+                <button id="btnRegister" class="btn-primary">
+                    <i class="fas fa-user-plus"></i>
+                    Registrar
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div id="errorModal" class="modal hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>
+                    <i class="fas fa-exclamation-circle"></i>
+                    Erro
+                </h3>
+                <button class="modal-close">×</button>
+            </div>
+            <div class="modal-body">
+                <p id="errorMessage"></p>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-primary modal-close">OK</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="loadingOverlay" class="loading-overlay hidden">
+        <div class="spinner"></div>
+        <p>Carregando...</p>
+    </div>
+</body>
+</html> 

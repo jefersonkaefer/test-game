@@ -5,34 +5,15 @@ type ClientLoginRequest struct {
 	Password string `json:"password"`
 }
 
-type ClientLoginResponse struct {
-	ID       string `json:"id"`
-	Username string `json:"username"`
-	Token    string `json:"token"`
-}
-
 type CreateClientRequest struct {
 	Username string `json:"username"`
 	Password string `json:"password"`
 }
 
 type CreateClientResponse struct {
-	ID       string `json:"id"`
-	Username string `json:"username"`
+	ID string `json:"id"`
 }
 
-type ClientDTO struct {
-	ID       string  `json:"id"`
-	Username string  `json:"username"`
-	Balance  float64 `json:"balance"`
-}
-
-type UpdateClientBalanceRequest struct {
-	ClientID string  `json:"client_id"`
-	Amount   float64 `json:"amount"`
-}
-
-type UpdateClientBalanceResponse struct {
-	ID      string  `json:"id"`
+type GetBalanceResponse struct {
 	Balance float64 `json:"balance"`
 }

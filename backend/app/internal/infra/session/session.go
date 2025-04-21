@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
 	"github.com/sirupsen/logrus"
 
@@ -145,12 +144,18 @@ func extractToken(r *http.Request) (string, error) {
 		}
 	}
 
-	queryToken := r.URL.Query().Get("token")
-	if queryToken != "" {
-		return queryToken, nil
+	rawQuery := r.URL.RawQuery
+	if rawQuery != "" {
+		if strings.Contains(rawQuery, "authorization=") {
+			tokenPart := strings.TrimPrefix(rawQuery, "authorization=")
+			tokenPart = strings.ReplaceAll(tokenPart, "%20", " ")
+			if strings.HasPrefix(tokenPart, "Bearer ") {
+				return strings.TrimPrefix(tokenPart, "Bearer "), nil
+			}
+		}
 	}
 
-	return "", fmt.Errorf("token not found in header or URL parameters")
+	return "", fmt.Errorf("token não encontrado")
 }
 
 func (m *Manager) Create(ctx context.Context, session Session) (token string, err error) {
@@ -251,60 +256,6 @@ func (m *Manager) Delete(ctx context.Context, token string) error {
 	}
 
 	return nil
-}
-
-func (m *Manager) DeleteAllForClient(ctx context.Context, clientID string) error {
-	logger.WithFields(logrus.Fields{
-		"client_id": clientID,
-	}).Debug("Deleting all sessions for client")
-
-	pattern := sessionKeyPrefix + "*"
-	keys, err := m.client.Keys(ctx, pattern).Result()
-	if err != nil {
-		logger.Errorf("Failed to get session keys: %v", err)
-		return err
-	}
-
-	for _, key := range keys {
-		session, err := m.Get(ctx, key[len(sessionKeyPrefix):]) // Remove o prefixo "session:"
-		if err != nil {
-			continue
-		}
-		if session != nil && session.ClientID == clientID {
-			err = m.Delete(ctx, key[len(sessionKeyPrefix):])
-			if err != nil {
-				logger.Errorf("Failed to delete session %s: %v", key, err)
-			}
-		}
-	}
-
-	return nil
-}
-
-func (m *Manager) DeleteAllSessionsForClient(ctx context.Context, clientID string) error {
-	logger.WithFields(logrus.Fields{
-		"client_id": clientID,
-	}).Debug("Deleting all sessions for client")
-
-	pattern := sessionKeyPrefix + clientID + "*"
-	keys, err := m.client.Keys(ctx, pattern).Result()
-	if err != nil {
-		logger.Errorf("Failed to get session keys: %v", err)
-		return err
-	}
-
-	for _, key := range keys {
-		err = m.Delete(ctx, key[len(sessionKeyPrefix):])
-		if err != nil {
-			logger.Errorf("Failed to delete session %s: %v", key, err)
-		}
-	}
-
-	return nil
-}
-
-func GenerateID() string {
-	return uuid.New().String()
 }
 
 func (m *Manager) generateJWT(clientID, ip, userAgent string) (string, error) {

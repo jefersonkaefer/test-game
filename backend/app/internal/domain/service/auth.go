@@ -6,6 +6,8 @@ import (
 	"game/api/internal/errs"
 	"game/api/internal/infra/logger"
 	"game/api/internal/infra/session"
+
+	"github.com/google/uuid"
 )
 
 type AuthService struct {
@@ -45,14 +47,16 @@ func (s *AuthService) Login(ctx context.Context, username, password, ip, userAge
 	return token, nil
 }
 
-func (s *AuthService) Logout(ctx context.Context, token string) error {
-	return s.sessionManager.Delete(ctx, token)
-}
-
-func (s *AuthService) LogoutAll(ctx context.Context, clientID string) error {
-	return s.sessionManager.DeleteAllForClient(ctx, clientID)
-}
-
-func (s *AuthService) LogoutAllSessionsForClient(ctx context.Context, clientID string) error {
-	return s.sessionManager.DeleteAllSessionsForClient(ctx, clientID)
+func (s *AuthService) Logout(ctx context.Context, clientID uuid.UUID, token string) error {
+	err := s.clientService.RefreshWallet(ctx, clientID)
+	if err != nil {
+		logger.Errorf("Failed to refresh wallet: %v", err)
+		return err
+	}
+	err = s.sessionManager.Delete(ctx, token)
+	if err != nil {
+		logger.Errorf("Failed to delete session: %v", err)
+		return err
+	}
+	return nil
 }

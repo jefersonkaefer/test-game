@@ -3,20 +3,26 @@ package database
 import (
 	"context"
 	"encoding/json"
+	"time"
 
 	"github.com/redis/go-redis/v9"
 	"github.com/sirupsen/logrus"
 
+	"game/api/internal/infra/lock"
 	"game/api/internal/infra/logger"
 )
 
 type Redis struct {
 	client *redis.Client
+	lock   *lock.Lock
 }
 
 func NewRedis(client *redis.Client) *Redis {
 	logger.Info("Initializing Redis connection")
-	return &Redis{client: client}
+	return &Redis{
+		client: client,
+		lock:   lock.NewLock(client),
+	}
 }
 
 func (r *Redis) Set(ctx context.Context, key string, value interface{}) error {
@@ -97,4 +103,8 @@ func (r *Redis) Close() error {
 	}
 	logger.Debug("Redis connection closed successfully")
 	return nil
+}
+
+func (r *Redis) WithLock(ctx context.Context, key string, ttl time.Duration, retryCount int, retryDelay time.Duration, fn func() error) error {
+	return r.lock.WithLock(ctx, key, ttl, retryCount, retryDelay, fn)
 }

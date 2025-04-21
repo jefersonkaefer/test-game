@@ -11,8 +11,6 @@ type Client struct {
 	id       uuid.UUID
 	username string
 	password string
-	inPlay   bool
-	wallet   Wallet
 }
 
 func NewClient(username, password string, balance float64) (Client, error) {
@@ -25,11 +23,6 @@ func NewClient(username, password string, balance float64) (Client, error) {
 		id:       uuid.New(),
 		username: username,
 		password: hashedPassword,
-		inPlay:   false,
-		wallet: Wallet{
-			guid:    uuid.New(),
-			balance: balance,
-		},
 	}, nil
 }
 
@@ -43,38 +36,6 @@ func (c *Client) GetUsername() string {
 
 func (c *Client) GetPassword() string {
 	return c.password
-}
-
-func (c *Client) GetWalletID() uuid.UUID {
-	return c.wallet.guid
-}
-
-func (c *Client) GetBalance() float64 {
-	return c.wallet.balance
-}
-
-func (c *Client) CanBet(amount float64) bool {
-	return c.wallet.balance >= amount
-}
-
-func (c *Client) InPlay() bool {
-	return c.inPlay
-}
-
-func (c *Client) Debit(amount float64) {
-	c.wallet.balance -= amount
-}
-
-func (c *Client) Credit(amount float64) {
-	c.wallet.balance += amount
-}
-
-func (c *Client) PlayOn() {
-	c.inPlay = true
-}
-
-func (c *Client) PlayOff() {
-	c.inPlay = true
 }
 
 func HashPassword(password string) (string, error) {
@@ -94,13 +55,5 @@ func LoadClient(cData database.ClientData) (c Client, err error) {
 	}
 	c.username = cData.Username
 	c.password = cData.Password
-	wGuid, err := uuid.Parse(cData.Wallet.GUID)
-	if err != nil {
-		return
-	}
-	c.wallet = Wallet{
-		guid:    wGuid,
-		balance: cData.Wallet.Balance,
-	}
 	return
 }

@@ -3,6 +3,8 @@ package controller
 import (
 	"context"
 
+	"github.com/google/uuid"
+
 	"game/api/internal/application/dto"
 	"game/api/internal/domain/service"
 )
@@ -24,46 +26,27 @@ func (c *ClientController) Create(ctx context.Context, username, password string
 	}
 
 	res = dto.CreateClientResponse{
-		ID:       clientID,
-		Username: username,
+		ID: clientID.String(),
 	}
 	return
 }
 
-func (c *ClientController) GetBalance(ctx context.Context, clientID string) (res dto.ClientDTO, err error) {
-	client, err := c.clientService.GetByUsername(ctx, clientID)
+func (c *ClientController) GetBalance(ctx context.Context, clientID string) (res dto.GetBalanceResponse, err error) {
+	clientUUID, err := uuid.Parse(clientID)
+	if err != nil {
+		return
+	}
+	err = c.clientService.RefreshWallet(ctx, clientUUID)
+	if err != nil {
+		return
+	}
+	balance, err := c.clientService.GetBalance(ctx, clientUUID)
 	if err != nil {
 		return
 	}
 
-	res = dto.ClientDTO{
-		ID:       client.GetID().String(),
-		Username: client.GetUsername(),
-		Balance:  client.GetBalance(),
-	}
-	return
-}
-
-func (c *ClientController) UpdateBalance(ctx context.Context, clientID string, amount float64) (res dto.UpdateClientBalanceResponse, err error) {
-	client, err := c.clientService.GetByUsername(ctx, clientID)
-	if err != nil {
-		return
-	}
-
-	if amount > 0 {
-		client.Credit(amount)
-	} else {
-		client.Debit(-amount)
-	}
-
-	err = c.clientService.Update(ctx, client)
-	if err != nil {
-		return
-	}
-
-	res = dto.UpdateClientBalanceResponse{
-		ID:      client.GetID().String(),
-		Balance: client.GetBalance(),
+	res = dto.GetBalanceResponse{
+		Balance: balance,
 	}
 	return
 }

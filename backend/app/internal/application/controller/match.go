@@ -2,159 +2,68 @@ package controller
 
 import (
 	"context"
-	"fmt"
-	"time"
-
-	"game/api/internal/application/dto"
-	"game/api/internal/domain/entity"
-	"game/api/internal/domain/service"
-	"game/api/internal/infra/session"
 
 	"github.com/google/uuid"
+
+	"game/api/internal/application/dto"
+	"game/api/internal/domain/service"
+	"game/api/internal/infra/logger"
 )
 
 type MatchController struct {
-	matchService *service.MatchService
+	serviceMatch *service.MatchService
 }
 
-func NewMatchController(matchService *service.MatchService) *MatchController {
+func NewMatchController(serviceMatch *service.MatchService) *MatchController {
 	return &MatchController{
-		matchService: matchService,
+		serviceMatch: serviceMatch,
 	}
 }
 
-func (c *MatchController) CreateMatch(ctx context.Context, clientID string, req dto.CreateMatchRequest) (res dto.CreateMatchResponse, err error) {
-	clientUUID, err := uuid.Parse(clientID)
+func (c *MatchController) NewMatch(ctx context.Context, playerID string) error {
+	playerUUID, err := uuid.Parse(playerID)
 	if err != nil {
-		return dto.CreateMatchResponse{}, fmt.Errorf("invalid client ID: %w", err)
+		logger.Errorf("Failed to parse playerID: %v", err)
+		return err
 	}
 
-	match, err := c.matchService.CreateMatch(ctx,
-		clientUUID,
-		req.MinPlayers,
-		req.MaxPlayers,
-		entity.GameMode(req.GameMode),
-	)
+	err = c.serviceMatch.NewMatch(ctx, playerUUID)
 	if err != nil {
+		logger.Errorf("Failed to new game: %v", err)
+		return err
+	}
+	return nil
+}
+
+func (c *MatchController) Bet(ctx context.Context, playerID string, amount float64, choice string) (response dto.PlaceBetResponse, err error) {
+	playerUUID, err := uuid.Parse(playerID)
+	if err != nil {
+		logger.Errorf("Failed to parse playerID: %v", err)
 		return
 	}
 
-	playerIDs := make([]string, len(match.Players()))
-	for i, p := range match.Players() {
-		playerIDs[i] = p.PlayerID.String()
-	}
-
-	res = dto.CreateMatchResponse{
-		ID:        match.ID().String(),
-		Players:   playerIDs,
-		Status:    string(match.Status()),
-		CreatedAt: match.CreatedAt().Format(time.RFC3339),
-	}
-	return
-}
-
-func (c *MatchController) GetMatch(ctx context.Context, id string) (*dto.GetMatchResponse, error) {
-	matchID, err := uuid.Parse(id)
+	number, result, err := c.serviceMatch.PlaceBet(ctx, playerUUID, amount, choice)
 	if err != nil {
-		return nil, err
+		logger.Errorf("Failed to place bet: %v", err)
+		return
 	}
-	match, err := c.matchService.GetMatch(ctx, matchID)
-	if err != nil {
-		return nil, err
-	}
-
-	playerIDs := make([]string, len(match.Players()))
-	for i, p := range match.Players() {
-		playerIDs[i] = p.PlayerID.String()
-	}
-
-	return &dto.GetMatchResponse{
-		ID:        match.ID().String(),
-		Players:   playerIDs,
-		Status:    string(match.Status()),
-		CreatedAt: match.CreatedAt().Format(time.RFC3339),
+	return dto.PlaceBetResponse{
+		Result: result,
+		Number: number,
 	}, nil
 }
 
-func (c *MatchController) JoinMatch(ctx context.Context, matchID, clientID string) (*dto.GetMatchResponse, error) {
-	matchUUID, err := uuid.Parse(matchID)
-	if err != nil {
-		return nil, fmt.Errorf("invalid match ID: %w", err)
-	}
-
+func (c *MatchController) EndMatch(ctx context.Context, clientID string) error {
 	clientUUID, err := uuid.Parse(clientID)
 	if err != nil {
-		return nil, fmt.Errorf("invalid client ID: %w", err)
+		logger.Errorf("Failed to parse clientID: %v", err)
+		return err
 	}
 
-	err = c.matchService.JoinMatch(ctx, matchUUID, clientUUID)
+	err = c.serviceMatch.EndMatch(ctx, clientUUID)
 	if err != nil {
-		return nil, err
+		logger.Errorf("Failed to end match: %v", err)
+		return err
 	}
-
-	match, err := c.matchService.GetMatch(ctx, matchUUID)
-	if err != nil {
-		return nil, err
-	}
-
-	playerIDs := make([]string, len(match.Players()))
-	for i, p := range match.Players() {
-		playerIDs[i] = p.PlayerID.String()
-	}
-
-	return &dto.GetMatchResponse{
-		ID:        match.ID().String(),
-		Players:   playerIDs,
-		Status:    string(match.Status()),
-		CreatedAt: match.CreatedAt().Format(time.RFC3339),
-	}, nil
-}
-
-func (c *MatchController) LeaveMatch(ctx context.Context, req dto.AddPlayerRequest) error {
-	matchID, err := uuid.Parse(req.MatchID)
-	if err != nil {
-		return fmt.Errorf("invalid match ID: %w", err)
-	}
-
-	clientID, ok := ctx.Value(session.ContextKeyClientID).(string)
-	if !ok || clientID == "" {
-		return fmt.Errorf("client ID is required")
-	}
-
-	clientUUID, err := uuid.Parse(clientID)
-	if err != nil {
-		return fmt.Errorf("invalid client ID: %w", err)
-	}
-
-	return c.matchService.LeaveMatch(ctx, matchID, clientUUID)
-}
-
-func (c *MatchController) PlaceBetAndChoose(ctx context.Context, clientID string, req dto.CreateBetRequest) error {
-	matchID, err := uuid.Parse(req.MatchID)
-	if err != nil {
-		return fmt.Errorf("invalid match ID: %w", err)
-	}
-
-	playerID, err := uuid.Parse(clientID)
-	if err != nil {
-		return fmt.Errorf("invalid client ID: %w", err)
-	}
-
-	return c.matchService.PlaceBet(ctx, matchID, playerID, req.Amount, req.Parity)
-}
-
-func (c *MatchController) StartMatch(ctx context.Context, matchID string) error {
-	id, err := uuid.Parse(matchID)
-	if err != nil {
-		return fmt.Errorf("invalid match ID: %w", err)
-	}
-	return c.matchService.Play(ctx, id)
-}
-
-func (c *MatchController) EndMatch(ctx context.Context, matchID string) error {
-	id, err := uuid.Parse(matchID)
-	if err != nil {
-		return fmt.Errorf("invalid match ID: %w", err)
-	}
-	return c.matchService.EndMatch(ctx, id)
+	return nil
 }

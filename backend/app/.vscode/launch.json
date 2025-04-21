@@ -10,14 +10,7 @@
             "type": "go",
             "request": "launch",
             "mode": "auto",
-            "program": "./cmd/http/main.go"
-        },
-        {
-            "name": "WS Server",
-            "type": "go",
-            "request": "launch",
-            "mode": "auto",
-            "program": "./cmd/ws/main.go"
+            "program": "./cmd/api/main.go"
         }
     ]
 }
